@@ -1,6 +1,8 @@
 import json
 import logging
+import asyncio
 from aiokafka import AIOKafkaProducer
+from aiokafka.errors import KafkaConnectionError
 
 logger = logging.getLogger(__name__)
 
@@ -8,23 +10,28 @@ logger = logging.getLogger(__name__)
 class AnomalyKafkaProducer:
     def __init__(self, bootstrap_servers: str):
         self.bootstrap_servers = bootstrap_servers
-        self.producer: AIOKafkaProducer | None = None
+        self._producer: AIOKafkaProducer | None = None
 
     async def start(self):
-        self.producer = AIOKafkaProducer(
-            bootstrap_servers=self.bootstrap_servers,
-            value_serializer=lambda v: json.dumps(v).encode("utf-8"),
-        )
-        await self.producer.start()
-        logger.info("Kafka producer started")
-
-    async def stop(self):
-        if self.producer:
-            await self.producer.stop()
-            logger.info("Kafka producer stopped")
+        while True:
+            try:
+                self._producer = AIOKafkaProducer(
+                    bootstrap_servers=self.bootstrap_servers,
+                    value_serializer=lambda v: json.dumps(v).encode("utf-8"),
+                )
+                await self._producer.start()
+                logger.info("Kafka producer connected")
+                break
+            except KafkaConnectionError:
+                logger.warning("Kafka not ready for producer, retrying in 5 seconds...")
+                await asyncio.sleep(5)
 
     async def publish(self, topic: str, message: dict):
-        if not self.producer:
-            raise RuntimeError("Producer not started")
-        await self.producer.send_and_wait(topic, message)
-        logger.info(f"Published message to {topic}: {message}")
+        if not self._producer:
+            logger.warning("Producer not ready, message skipped")
+            return
+        await self._producer.send_and_wait(topic, message)
+
+    async def stop(self):
+        if self._producer:
+            await self._producer.stop()

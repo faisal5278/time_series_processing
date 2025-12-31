@@ -1,13 +1,23 @@
 import json
 import logging
+import asyncio
 from aiokafka import AIOKafkaConsumer
+from aiokafka.errors import KafkaConnectionError
 from src.adapters.input.kafka.message_handler import PreprocessingCompletedHandler
 
 logger = logging.getLogger(__name__)
 
 
 class AnomalyKafkaConsumer:
-    def __init__(self, bootstrap_servers: str, topic: str, group_id: str, handler: PreprocessingCompletedHandler):
+    def __init__(
+        self,
+        bootstrap_servers: str,
+        topic: str,
+        group_id: str,
+        handler: PreprocessingCompletedHandler,
+    ):
+        self.topic = topic
+        self.handler = handler
         self.consumer = AIOKafkaConsumer(
             topic,
             bootstrap_servers=bootstrap_servers,
@@ -15,11 +25,16 @@ class AnomalyKafkaConsumer:
             value_deserializer=lambda m: json.loads(m.decode("utf-8")),
             auto_offset_reset="latest",
         )
-        self.handler = handler
 
     async def start(self):
-        await self.consumer.start()
-        logger.info("Kafka consumer started")
+        while True:
+            try:
+                await self.consumer.start()
+                logger.info("Kafka consumer connected")
+                break
+            except KafkaConnectionError:
+                logger.warning("Kafka not ready for consumer, retrying in 5 seconds...")
+                await asyncio.sleep(5)
 
         try:
             async for msg in self.consumer:
@@ -27,3 +42,6 @@ class AnomalyKafkaConsumer:
         finally:
             await self.consumer.stop()
             logger.info("Kafka consumer stopped")
+
+    async def stop(self):
+        await self.consumer.stop()

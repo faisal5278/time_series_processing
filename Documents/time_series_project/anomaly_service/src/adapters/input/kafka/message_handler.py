@@ -10,23 +10,17 @@ logger = logging.getLogger(__name__)
 
 
 class PreprocessingCompletedHandler:
-    def __init__(self, producer: AnomalyKafkaProducer, output_topic: str):
+    def __init__(self, producer: AnomalyKafkaProducer):
         self.producer = producer
-        self.output_topic = output_topic
+        self.output_topic = "data.anomaly.completed"
 
     async def handle(self, message: dict):
-        """
-        Expected message example from preprocessing:
-        {
-          "series_id": "sensor_123"
-        }
-        """
         series_id = message.get("series_id")
         if not series_id:
             logger.warning("Message missing series_id")
             return
 
-        logger.info(f"Preprocessing completed for series_id={series_id}. Running anomaly detection...")
+        logger.info(f"Received preprocessing completed for series_id={series_id}")
 
         db: Session = SessionLocal()
         try:
@@ -34,7 +28,7 @@ class PreprocessingCompletedHandler:
                 db=db,
                 series_id=series_id,
                 column="close",
-                limit=500
+                limit=500,
             )
 
             if not values:
@@ -42,20 +36,19 @@ class PreprocessingCompletedHandler:
                 return
 
             use_case = DetectAnomaliesUseCase()
-            anomaly_indices, z_scores = use_case.execute(values)
+            anomaly_indices, _ = use_case.execute(values)
 
-            anomalies_found = len(anomaly_indices)
-            logger.info(f"Anomaly detection done for {series_id}. Found {anomalies_found} anomalies")
-
-            # ✅ Publish "done" message
             await self.producer.publish(
                 self.output_topic,
                 {
                     "series_id": series_id,
                     "status": "done",
-                    "anomalies_found": anomalies_found,
-                }
+                    "anomalies_found": len(anomaly_indices),
+                },
             )
+
+            logger.info(f"Anomaly detection completed for {series_id}")
 
         finally:
             db.close()
+

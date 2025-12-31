@@ -5,3 +5,4 @@ numpy
 sqlalchemy
 psycopg2-binary
 python-dotenv
+aiokafka
