@@ -43,3 +43,9 @@ async def shutdown_event():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+
+
+
+

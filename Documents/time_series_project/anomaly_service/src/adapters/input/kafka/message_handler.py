@@ -51,4 +51,3 @@ class PreprocessingCompletedHandler:
 
         finally:
             db.close()
-
