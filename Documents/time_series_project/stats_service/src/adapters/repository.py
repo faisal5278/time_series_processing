@@ -44,3 +44,5 @@ def fetch_series_values(
     values = [row[1] for row in rows]
 
     return timestamps, values
+
+

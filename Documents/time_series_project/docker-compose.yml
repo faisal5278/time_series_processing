@@ -18,12 +18,9 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-
-      # Kafka networking (IMPORTANT)
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
   timescaledb:
@@ -39,6 +36,32 @@ services:
       - timescaledb-data:/var/lib/postgresql/data
       - ./k8s/timescaledb-init:/docker-entrypoint-initdb.d
 
+  anomaly-status-db:
+    image: postgres:15-alpine
+    container_name: anomaly-status-db
+    environment:
+      POSTGRES_USER: tsuser
+      POSTGRES_PASSWORD: ts_password
+      POSTGRES_DB: anomaly_status
+    ports:
+      - "5435:5432"
+    volumes:
+      - anomaly-status-data:/var/lib/postgresql/data
+      - ./k8s/status-db-init/anomaly:/docker-entrypoint-initdb.d
+
+  stats-status-db:
+    image: postgres:15-alpine
+    container_name: stats-status-db
+    environment:
+      POSTGRES_USER: tsuser
+      POSTGRES_PASSWORD: ts_password
+      POSTGRES_DB: stats_status
+    ports:
+      - "5436:5432"
+    volumes:
+      - stats-status-data:/var/lib/postgresql/data
+      - ./k8s/status-db-init/stats:/docker-entrypoint-initdb.d
+
   anomaly_service:
     build:
       context: ./anomaly_service
@@ -46,8 +69,10 @@ services:
     depends_on:
       - timescaledb
       - kafka
+      - anomaly-status-db
     environment:
       DATABASE_URL: postgresql+psycopg2://tsuser:ts_password@timescaledb:5432/timeseries
+      STATUS_DATABASE_URL: postgresql+psycopg2://tsuser:ts_password@anomaly-status-db:5432/anomaly_status
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_TOPIC: data.preprocessing.completed
       KAFKA_GROUP_ID: anomaly-service-group
@@ -62,12 +87,15 @@ services:
     depends_on:
       - timescaledb
       - kafka
+      - stats-status-db
     environment:
       DATABASE_URL: postgresql+psycopg2://tsuser:ts_password@timescaledb:5432/timeseries
+      STATUS_DATABASE_URL: postgresql+psycopg2://tsuser:ts_password@stats-status-db:5432/stats_status
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     ports:
       - "8002:8002"
 
 volumes:
   timescaledb-data:
-
+  anomaly-status-data:
+  stats-status-data:
